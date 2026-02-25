@@ -1,0 +1,27 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+rules_dir: "./rules"
+providers_dir: "./providers"
+config_dir: "./config"
+
+auth:
+  enabled: false
+  local_mode: true
+  jwt_secret_key: ""
+  gateway_master_key: ""
+
+budget:
+  monthly_usd: 0.0           # 0 = no budget limit
+  cost_db_path: "~/.ccprism/costs.db"
+  retention_days: 90
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: ""
+
+monitoring:
+  slack_webhook_url: ""
+  alert_level: "CRITICAL"
