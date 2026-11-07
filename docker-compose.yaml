@@ -2,7 +2,7 @@ services:
   ccprism:
     build: .
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./rules:/app/rules
       - ./config:/app/config
@@ -16,7 +16,9 @@ services:
       - TOGETHERAI_API_KEY=${TOGETHERAI_API_KEY:-}
       - GCP_PROJECT=${GCP_PROJECT:-}
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
-      - GATEWAY_MASTER_KEY=${GATEWAY_MASTER_KEY:-}
+      - CCPRISM_AUTH__ENABLED=true
+      - CCPRISM_AUTH__LOCAL_MODE=false
+      - CCPRISM_AUTH__GATEWAY_MASTER_KEY=${CCPRISM_AUTH__GATEWAY_MASTER_KEY:?Set a random gateway master key of at least 32 characters}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]

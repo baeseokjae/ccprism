@@ -75,3 +75,18 @@ class TestRunStartupSecurityChecks:
         ):
             result = run_startup_security_checks()
             assert isinstance(result, list)
+
+
+def test_environment_secret_values_are_never_logged(caplog):
+    import logging
+
+    for secret in ("tiny", "sk-secret-long-value-not-for-logs"):
+        caplog.clear()
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": secret}, clear=True),
+            caplog.at_level(logging.INFO, logger="ccprism.security"),
+        ):
+            check_environment_secrets()
+        assert "OPENAI_API_KEY" in caplog.text
+        assert secret not in caplog.text
+        assert secret[:8] not in caplog.text

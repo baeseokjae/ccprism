@@ -6,12 +6,14 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+
+from ..auth.gateway_auth import require_gateway_user
 
 logger = logging.getLogger("ccprism.api.messages")
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_gateway_user)])
 
 
 @router.post("/v1/messages")
@@ -78,8 +80,8 @@ async def create_message(request: Request) -> Any:
             return _format_anthropic_response(response)
 
     except Exception as e:
-        logger.error(f"Request failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Provider request failed: {e}") from e
+        logger.error("Provider request failed (%s)", type(e).__name__)
+        raise HTTPException(status_code=502, detail="Provider request failed") from e
 
 
 async def _stream_response(router: Any, kwargs: dict) -> Any:
@@ -95,7 +97,11 @@ async def _stream_response(router: Any, kwargs: dict) -> Any:
         yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
 
     except Exception as e:
-        error_data = {"type": "error", "error": {"type": "api_error", "message": str(e)}}
+        logger.error("Provider stream failed (%s)", type(e).__name__)
+        error_data = {
+            "type": "error",
+            "error": {"type": "api_error", "message": "Provider stream failed"},
+        }
         yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
 
 

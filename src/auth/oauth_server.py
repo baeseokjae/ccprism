@@ -243,5 +243,7 @@ def create_oauth_server(jwt_secret: str | None = None) -> OAuthServer:
     """Create an OAuth server instance."""
     from ..config import get_settings
 
-    secret = jwt_secret or get_settings().jwt_secret_key or secrets.token_urlsafe(32)
+    secret = jwt_secret or get_settings().jwt_secret_key
+    if not secret or len(secret) < 32 or not secret.strip():
+        raise ValueError("OAuth requires a configured JWT signing key of at least 32 characters")
     return OAuthServer(jwt_secret=secret)

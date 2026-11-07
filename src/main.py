@@ -30,6 +30,10 @@ def setup_logging() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """FastAPI lifespan context manager for startup/shutdown."""
+    # Validate before opening databases, loading credentials, or starting workers.
+    from .auth.gateway_auth import validate_auth_settings
+
+    validate_auth_settings(get_settings())
     setup_logging()
 
     # Run security checks early, before any credential loading
@@ -173,6 +177,9 @@ def create_app() -> FastAPI:
         description="AI Gateway for Claude Code - Dynamic routing to multiple AI providers",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
     # Include routers

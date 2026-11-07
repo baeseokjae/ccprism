@@ -6,14 +6,17 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from src.config import get_settings
 from src.engine.rule_engine import RuleEngine
 from src.engine.stats_collector import StatsCollector
 from src.main import create_app
 
 
 @pytest.fixture
-def app_with_state():
+def app_with_state(monkeypatch):
     """Create a test app with rule engine and stats collector."""
+    monkeypatch.setenv("CCPRISM_AUTH__GATEWAY_MASTER_KEY", "test-admin-key-" + "a" * 32)
+    get_settings.cache_clear()
     app = create_app()
     rules_dir = Path(__file__).parent.parent / "rules"
     app.state.rule_engine = RuleEngine(rules_dir)
@@ -23,12 +26,16 @@ def app_with_state():
     mock_cm._adapters = {}
     app.state.credential_manager = mock_cm
 
-    return app
+    yield app
+    get_settings.cache_clear()
 
 
 @pytest.fixture
 def client(app_with_state):
-    return TestClient(app_with_state, raise_server_exceptions=False)
+    return TestClient(
+        app_with_state, raise_server_exceptions=False,
+        headers={"x-api-key": "test-admin-key-" + "a" * 32},
+    )
 
 
 class TestAdminRules:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -18,8 +19,10 @@ def main() -> None:
 
     # ccprism start
     start_parser = subparsers.add_parser("start", help="Start the gateway server")
-    start_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-    start_parser.add_argument("--port", type=int, default=8080, help="Port to bind to")
+    start_parser.add_argument(
+        "--host", default=None, help="Host to bind to (default: configured loopback)"
+    )
+    start_parser.add_argument("--port", type=int, default=None, help="Port to bind to")
     start_parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
     start_parser.add_argument("--config", default=None, help="Path to gateway.yaml")
 
@@ -89,12 +92,30 @@ def _cmd_start(args: argparse.Namespace) -> None:
     """Start the gateway server."""
     import uvicorn
 
-    print(f"Starting ccprism AI Gateway on {args.host}:{args.port}...")
+    from ..auth.gateway_auth import validate_auth_settings
+    from ..config import get_settings
+
+    if args.config:
+        os.environ["CCPRISM_CONFIG"] = str(Path(args.config).resolve())
+    get_settings.cache_clear()
+    settings = get_settings()
+    host = args.host if args.host is not None else settings.server.host
+    port = args.port if args.port is not None else settings.server.port
+    try:
+        validate_auth_settings(settings, host=host)
+    except ValueError as exc:
+        raise SystemExit(f"Unsafe gateway configuration: {exc}") from exc
+    # Preserve overrides in Uvicorn reload workers as well as this process.
+    os.environ["CCPRISM_SERVER__HOST"] = host
+    os.environ["CCPRISM_SERVER__PORT"] = str(port)
+    get_settings.cache_clear()
+    print(f"Starting ccprism AI Gateway on {host}:{port}...")
     uvicorn.run(
         "src.main:app",
-        host=args.host,
-        port=args.port,
+        host=host,
+        port=port,
         reload=args.reload,
+        proxy_headers=False,
     )
 
 

@@ -43,7 +43,10 @@ uv sync
 ### 서버 시작
 
 ```bash
-# 기본 시작 (0.0.0.0:8080)
+# 게이트웨이 전용 키 생성 (비공개로 보관하고 저장소에 커밋하지 마세요)
+export CCPRISM_AUTH__GATEWAY_MASTER_KEY="$(openssl rand -hex 32)"
+
+# 기본 시작 (127.0.0.1:8080, 인증 필수)
 uv run ccprism start
 
 # 포트 지정
@@ -57,8 +60,10 @@ uv run ccprism start --reload
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_AUTH_TOKEN="$CCPRISM_AUTH__GATEWAY_MASTER_KEY"
 # 또는 ~/.claude/settings.json에 추가:
-# { "env": { "ANTHROPIC_BASE_URL": "http://localhost:8080" } }
+# { "env": { "ANTHROPIC_BASE_URL": "http://localhost:8080",
+#              "ANTHROPIC_AUTH_TOKEN": "<your gateway token>" } }
 ```
 
 이제 Claude Code의 모든 요청이 ccprism을 통해 라우팅됩니다.
@@ -159,7 +164,7 @@ uv run ccprism test-route "깊이 생각해줘" --thinking
 
 ```yaml
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 8080
 
 logging:
@@ -288,10 +293,10 @@ gcloud auth application-default login
 
 ```bash
 # 사용 예시
-curl http://localhost:8080/admin/rules
-curl http://localhost:8080/admin/stats
-curl http://localhost:8080/admin/costs/summary
-curl "http://localhost:8080/admin/costs/daily?days=14"
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" http://localhost:8080/admin/rules
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" http://localhost:8080/admin/stats
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" http://localhost:8080/admin/costs/summary
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" "http://localhost:8080/admin/costs/daily?days=14"
 ```
 
 ---
@@ -300,7 +305,7 @@ curl "http://localhost:8080/admin/costs/daily?days=14"
 
 ```
 ccprism start                   서버 시작
-  --host HOST                   바인딩 호스트 (기본: 0.0.0.0)
+  --host HOST                   바인딩 호스트 (기본: 127.0.0.1)
   --port PORT                   포트 (기본: 8080)
   --reload                      개발 모드 자동 재시작
   --config CONFIG               gateway.yaml 경로
@@ -384,6 +389,34 @@ ccprism test-route PROMPT       라우팅 dry-run 테스트
 | Layer 2: Gateway → Provider | API Key / Codex OAuth / Google ADC |
 
 ---
+
+## 게이트웨이 보안
+
+- 인증은 기본으로 활성화됩니다. 마스터/JWT 키가 없거나 32자 미만이면 시작하지
+  않습니다. 무작위로 생성한 키를 환경변수로 설정하고 YAML에 비밀키를 커밋하지 마세요.
+- `/v1/messages`는 `x-api-key` 또는 `Authorization: Bearer`를 검증합니다.
+  마스터 키는 관리자 자격입니다. HS256 JWT에는 `sub`와 `exp`가 필요하며,
+  `role: user` 토큰은 프록시 요청만 허용되고 관리 API에는 접근할 수 없습니다.
+- `/admin/*`, `/auth/status`, 모든 `/oauth/*`는 관리자 인증이 필요합니다.
+  내장 OAuth는 메모리 상태를 사용하는 개발용 기능이며 공개 OAuth 서버가 아닙니다.
+  토큰 교환·갱신도 관리자 인증이 필요하고, 발급하려면 별도로
+  `CCPRISM_AUTH__JWT_SECRET_KEY`를 설정해야 합니다. 공급자 Codex OAuth 재사용과는
+  별개 기능입니다.
+- 공개 `/health`는 최소한의 생존 상태만 제공합니다. `/docs`, `/redoc`,
+  `/openapi.json`은 비활성화됩니다.
+- 중첩 환경변수(`CCPRISM_AUTH__GATEWAY_MASTER_KEY`, `CCPRISM_SERVER__PORT` 등)가
+  YAML보다 우선합니다. `start --config`와 CLI 호스트/포트 지정은 재시작 작업에도
+  적용됩니다. 기존 Compose의 `GATEWAY_MASTER_KEY` 대신 접두사가 붙은 변수를 쓰세요.
+- Compose 공개 포트는 `127.0.0.1:8080`으로 제한되며 마스터 키가 필수입니다.
+  컨테이너 내부에서는 포트 전달을 위해 전체 인터페이스에 바인딩합니다.
+  직접 실행한다면 `docker run -p 127.0.0.1:8080:8080`을 사용하세요.
+- 로컬 개발에서만 인증을 명시적으로 끄려면 `CCPRISM_AUTH__ENABLED=false`와
+  `CCPRISM_AUTH__LOCAL_MODE=true`를 함께 설정하세요. 루프백 바인딩·접속·Host만
+  허용되고 Origin 또는 Fetch Metadata 헤더가 있으면 거부합니다. 이 모드는 로컬
+  프로세스를 신뢰하므로 리버스 프록시 뒤에서 사용하면 안 됩니다.
+- 원격 접속은 인증을 설정한 뒤 `--host 0.0.0.0`으로 명시적으로 열어야 합니다.
+  TLS와 방화벽, 접근 제한을 함께 사용하고 개발용 게이트웨이를 인터넷에 직접
+  노출하지 마세요. CLI와 컨테이너는 프록시 헤더 신뢰를 기본으로 비활성화합니다.
 
 ## 개발
 

@@ -39,8 +39,7 @@ def check_environment_secrets() -> list[str]:
     for key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"):
         val = os.environ.get(key, "")
         if val and not val.startswith("$"):
-            masked = val[:8] + "..." if len(val) > 8 else val
-            logger.info("Environment variable %s is set (%s)", key, masked)
+            logger.info("Environment variable %s is set (value redacted)", key)
             exposed.append(key)
     return exposed
 
