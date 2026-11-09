@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 
 import yaml
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 logger = logging.getLogger("ccprism.config")
 
@@ -16,13 +17,13 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class ServerSettings(BaseSettings):
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8080
 
 
 class AuthSettings(BaseSettings):
-    enabled: bool = False
-    local_mode: bool = True
+    enabled: bool = True
+    local_mode: bool = False
     jwt_secret_key: str = ""
     gateway_master_key: str = ""
 
@@ -47,7 +48,19 @@ class MonitoringSettings(BaseSettings):
 class GatewaySettings(BaseSettings):
     """Main gateway settings, loaded from gateway.yaml + env overrides."""
 
-    model_config = {"env_prefix": "CCPRISM_"}
+    model_config = SettingsConfigDict(env_prefix="CCPRISM_", env_nested_delimiter="__")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # YAML is passed as init data; deployment environment must take priority.
+        return env_settings, init_settings, dotenv_settings, file_secret_settings
 
     server: ServerSettings = Field(default_factory=ServerSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
@@ -99,7 +112,7 @@ def load_gateway_config(config_path: str | Path | None = None) -> GatewaySetting
 @lru_cache
 def get_settings() -> GatewaySettings:
     """Get cached gateway settings singleton."""
-    return load_gateway_config()
+    return load_gateway_config(os.environ.get("CCPRISM_CONFIG"))
 
 
 def load_litellm_config(config_path: str | Path | None = None) -> dict:

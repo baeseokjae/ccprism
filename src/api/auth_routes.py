@@ -2,15 +2,17 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth.credential_manager import CredentialManager
+from ..auth.gateway_auth import require_gateway_admin
 from ..auth.oauth_server import OAuthServer, create_oauth_server
+from ..config import get_settings
 
 logger = logging.getLogger("ccprism.api.auth")
 
-router = APIRouter(tags=["auth"])
+router = APIRouter(dependencies=[Depends(require_gateway_admin)], tags=["auth"])
 
 # Module-level singletons (initialized on first use)
 _oauth_server: OAuthServer | None = None
@@ -19,6 +21,8 @@ _credential_manager: CredentialManager | None = None
 
 def get_oauth_server() -> OAuthServer:
     global _oauth_server
+    if not get_settings().jwt_secret_key:
+        raise HTTPException(503, "OAuth requires a configured auth.jwt_secret_key")
     if _oauth_server is None:
         _oauth_server = create_oauth_server()
     return _oauth_server
@@ -132,7 +136,7 @@ async def authorize_endpoint(
 ) -> dict:
     """OAuth 2.0 authorization endpoint.
 
-    In production, this would render a consent UI. For now, auto-approves.
+    Development-only approval operation, protected by gateway administrator auth.
     """
     server = get_oauth_server()
 

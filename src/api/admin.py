@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from ..auth.gateway_auth import require_gateway_admin
 
 logger = logging.getLogger("ccprism.api.admin")
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(dependencies=[Depends(require_gateway_admin)], prefix="/admin", tags=["admin"])
 
 
 @router.get("/rules")

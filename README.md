@@ -43,7 +43,10 @@ uv sync
 ### Start Server
 
 ```bash
-# Default (0.0.0.0:8080)
+# Generate a gateway-only key (keep it private; never commit it)
+export CCPRISM_AUTH__GATEWAY_MASTER_KEY="$(openssl rand -hex 32)"
+
+# Default (127.0.0.1:8080, authentication required)
 uv run ccprism start
 
 # Custom port
@@ -57,24 +60,30 @@ uv run ccprism start --reload
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_AUTH_TOKEN="$CCPRISM_AUTH__GATEWAY_MASTER_KEY"
 # Or add to ~/.claude/settings.json:
-# { "env": { "ANTHROPIC_BASE_URL": "http://localhost:8080" } }
+# { "env": { "ANTHROPIC_BASE_URL": "http://localhost:8080",
+#              "ANTHROPIC_AUTH_TOKEN": "<your gateway token>" } }
 ```
 
-All Claude Code requests are now routed through ccprism.
+All Claude Code requests are now routed through ccprism. Set the same gateway token
+in the client shell; provider API keys remain separate and are not gateway credentials.
 
 ---
 
 ## Docker
 
 ```bash
-# Build and run
+# Set CCPRISM_AUTH__GATEWAY_MASTER_KEY as above, then build and run
 docker compose up
 
 # Pass API keys via environment variables
 ANTHROPIC_API_KEY=sk-ant-... docker compose up
 ```
 
+Compose publishes only `127.0.0.1:8080` and requires a gateway master key. The
+container listens on all interfaces internally so port forwarding works. For
+manual `docker run`, use `-p 127.0.0.1:8080:8080`, not `-p 8080:8080`.
 Port, volumes, and environment variables can be adjusted in `docker-compose.yaml`.
 
 ---
@@ -159,7 +168,7 @@ uv run ccprism test-route "Think deeply" --thinking
 
 ```yaml
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 8080
 
 logging:
@@ -288,10 +297,10 @@ The gateway exposes a REST API at `/admin` for runtime management.
 
 ```bash
 # Examples
-curl http://localhost:8080/admin/rules
-curl http://localhost:8080/admin/stats
-curl http://localhost:8080/admin/costs/summary
-curl "http://localhost:8080/admin/costs/daily?days=14"
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" http://localhost:8080/admin/rules
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" http://localhost:8080/admin/stats
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" http://localhost:8080/admin/costs/summary
+curl -H "x-api-key: $CCPRISM_AUTH__GATEWAY_MASTER_KEY" "http://localhost:8080/admin/costs/daily?days=14"
 ```
 
 ---
@@ -300,7 +309,7 @@ curl "http://localhost:8080/admin/costs/daily?days=14"
 
 ```
 ccprism start                   Start the gateway server
-  --host HOST                   Bind host (default: 0.0.0.0)
+  --host HOST                   Bind host (default: 127.0.0.1)
   --port PORT                   Port (default: 8080)
   --reload                      Development mode auto-restart
   --config CONFIG               Path to gateway.yaml
@@ -380,10 +389,38 @@ ccprism test-route PROMPT       Dry-run routing test
 
 | Layer | Role |
 |---|---|
-| Layer 1: Client → Gateway | JWT / Master Key / Local mode (bypass) |
+| Layer 1: Client → Gateway | JWT / Master Key / Explicit loopback-only local mode |
 | Layer 2: Gateway → Provider | API Key / Codex OAuth / Google ADC |
 
 ---
+
+## Gateway Security
+
+- Authentication is enabled by default. Startup refuses missing or shorter-than-32-character
+  master/JWT keys, conflicting local-mode settings, and unauthenticated remote binding.
+  Use randomly generated keys rather than passwords. Configure secrets through environment
+  variables, never a committed YAML file.
+- `/v1/messages` accepts `x-api-key` or `Authorization: Bearer` credentials. The master key
+  is an administrator credential. HS256 JWTs require `sub` and `exp`; a token with
+  `role: user` may proxy requests but cannot manage the gateway.
+- `/admin/*`, `/auth/status`, and all embedded `/oauth/*` endpoints require administrator
+  access. The embedded OAuth server is development scaffolding with in-memory state, not
+  a public OAuth service. Token exchange/refresh also require admin authentication, and
+  issuance is unavailable unless `CCPRISM_AUTH__JWT_SECRET_KEY` is configured. Provider
+  Codex OAuth credential reuse is separate and unchanged.
+- `/health` is the only public application endpoint and returns minimal liveness data.
+  Interactive API documentation and OpenAPI discovery are disabled.
+- `CCPRISM_` nested environment values now override YAML, for example
+  `CCPRISM_AUTH__GATEWAY_MASTER_KEY` and `CCPRISM_SERVER__PORT`. `start --config` loads
+  the selected file; `--host` and `--port` override it, including reload workers.
+  The old unprefixed `GATEWAY_MASTER_KEY` Compose variable is no longer used.
+- For a deliberate local-only development opt-out, set both `CCPRISM_AUTH__ENABLED=false`
+  and `CCPRISM_AUTH__LOCAL_MODE=true`. Only loopback binding, loopback peers, and loopback
+  Host values are allowed. Requests with Origin or Fetch Metadata headers are rejected.
+  Never use this mode behind a reverse proxy. Local processes are trusted in this mode.
+- Remote access is opt-in: configure authentication before `--host 0.0.0.0`, and use TLS,
+  a firewall, and restricted access. Do not expose this development gateway directly to
+  the public internet. The CLI/container disable proxy-header trust by default.
 
 ## Development
 
